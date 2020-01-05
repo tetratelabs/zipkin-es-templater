@@ -1,3 +1,16 @@
+// Copyright 2020 The OpenZipkin Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+// in compliance with the License. You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software distributed under the License
+// is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+// or implied. See the License for the specific language governing permissions and limitations under
+// the License.
+
+// Package templater contains logic to generate version specific elasticsearch index templates.
 package templater
 
 import (
@@ -7,6 +20,7 @@ import (
 
 // defaults
 const (
+	// maximum character length constraint of most names, IP literals and IDs
 	ShortStringLength = 256
 	AutoCompleteType  = "autocomplete"
 	SpanType          = "span"
@@ -15,8 +29,11 @@ const (
 
 // convenience values
 var (
-	_false  = false
-	_true   = true
+	_false = false
+	_true  = true
+	// in Zipkin search, we do exact match only (keyword). Norms is about
+	// scoring. We don't use that in our API, and disable it to reduce disk
+	// storage needed.
 	keyWord = Field{Type: "keyword", Norms: &_false}
 )
 
@@ -177,6 +194,8 @@ func AutoCompleteTemplate(v VersionSpecificTemplates) (*Template, error) {
 }
 
 func indexProperties(v VersionSpecificTemplates) Settings {
+	// 6.x _all disabled https://www.elastic.co/guide/en/elasticsearch/reference/6.7/breaking-changes-6.0.html#_the_literal__all_literal_meta_field_is_now_disabled_by_default
+	// 7.x _default disallowed https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_the_literal__default__literal_mapping_is_no_longer_allowed
 	s := Settings{
 		Index: Index{
 			NumberOfReplicas:    v.IndexReplicas,
@@ -185,6 +204,8 @@ func indexProperties(v VersionSpecificTemplates) Settings {
 		},
 	}
 	if v.Version < 7.0 {
+		// there is no explicit documentation of index.mapper.dynamic being
+		// removed in v7, but it was.
 		s.Index.MapperDynamic = &_false
 	}
 	return s
@@ -194,6 +215,11 @@ func indexPattern(v VersionSpecificTemplates, typ string) string {
 	return v.IndexPrefix + indexTypeDelimiter(v.Version) + typ + "-*"
 }
 
+// indexTypeDelimiter returns a delimiter based on what's supported by the
+// Elasticsearch version.
+// Starting in Elasticsearch 7.x, colons are no longer allowed in index names.
+// This logic will make sure the pattern in our index template doesn't use them
+// either. See: https://github.com/openzipkin/zipkin/issues/2219
 func indexTypeDelimiter(version float32) string {
 	if version < 7.0 {
 		return ":"
@@ -296,6 +322,7 @@ type MetaField struct {
 // version of ES it will either be a typed mapping (pre 7.0) or untyped one
 // (7.0+)
 func (m Mappings) AttachToTemplate(name string, version float32) interface{} {
+	// ES 7.x defaults include_type_name to false https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_literal_include_type_name_literal_now_defaults_to_literal_false_literal
 	if version < 7.0 {
 		nm := make(map[string]Mappings)
 		nm[name] = m
