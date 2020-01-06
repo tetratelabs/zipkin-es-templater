@@ -16,18 +16,19 @@ package templater
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 )
 
-// defaults
+// constants
 const (
 	// maximum character length constraint of most names, IP literals and IDs
-	ShortStringLength = 256
+	shortStringLength = 256
 	AutoCompleteType  = "autocomplete"
 	SpanType          = "span"
 	DependencyType    = "dependency"
+	TemplateSuffix    = "_template"
 )
 
-// convenience values
 var (
 	_false = false
 	_true  = true
@@ -45,7 +46,7 @@ type VersionSpecificTemplates struct {
 	IndexShards   int
 	SearchEnabled bool
 	StrictTraceID bool
-	Version       float32
+	Version       float64
 }
 
 // DefaultVersionSpecificTemplates holds default values.
@@ -58,6 +59,24 @@ var DefaultVersionSpecificTemplates = VersionSpecificTemplates{
 	Version:       7.0,
 }
 
+// HasSpanIndexTemplate returns if template map holds SpanIndexTemplate
+func HasSpanIndexTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
+	_, found := tpls[indexPattern(v, SpanType)+TemplateSuffix]
+	return found
+}
+
+// HasDependencyTemplate returns if template map holds SpanIndexTemplate
+func HasDependencyTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
+	_, found := tpls[indexPattern(v, DependencyType)+TemplateSuffix]
+	return found
+}
+
+// HasAutoCompleteTemplate returns if template map holds SpanIndexTemplate
+func HasAutoCompleteTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
+	_, found := tpls[indexPattern(v, AutoCompleteType)+TemplateSuffix]
+	return found
+}
+
 // SpanIndexTemplate returns a span index template object that satisfies the
 // provided (version specific) settings.
 func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
@@ -66,7 +85,7 @@ func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
 	}
 	t := Template{Settings: indexProperties(v)}
 
-	t.SetIndexName(v.Version, indexPattern(v, DependencyType))
+	t.setIndexName(v.Version, indexPattern(v, SpanType))
 
 	traceIDMapping := keyWord
 
@@ -107,7 +126,7 @@ func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
 					Mapping: Field{
 						Type:        "keyword",
 						Norms:       &_false,
-						IgnoreAbove: ShortStringLength,
+						IgnoreAbove: shortStringLength,
 					},
 					MatchMappingType: "string",
 					Match:            "*",
@@ -158,7 +177,7 @@ func DependencyTemplate(v VersionSpecificTemplates) (*Template, error) {
 		Settings: indexProperties(v),
 	}
 
-	t.SetIndexName(v.Version, indexPattern(v, DependencyType))
+	t.setIndexName(v.Version, indexPattern(v, DependencyType))
 
 	m := Mappings{
 		Enabled: &_false,
@@ -179,7 +198,7 @@ func AutoCompleteTemplate(v VersionSpecificTemplates) (*Template, error) {
 		Settings: indexProperties(v),
 	}
 
-	t.SetIndexName(v.Version, indexPattern(v, AutoCompleteType))
+	t.setIndexName(v.Version, indexPattern(v, AutoCompleteType))
 
 	m := Mappings{
 		Enabled: &_true,
@@ -198,8 +217,8 @@ func indexProperties(v VersionSpecificTemplates) Settings {
 	// 7.x _default disallowed https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_the_literal__default__literal_mapping_is_no_longer_allowed
 	s := Settings{
 		Index: Index{
-			NumberOfReplicas:    v.IndexReplicas,
-			NumberOfShards:      v.IndexShards,
+			NumberOfReplicas:    strconv.Itoa(v.IndexReplicas),
+			NumberOfShards:      strconv.Itoa(v.IndexShards),
 			RequestsCacheEnable: true,
 		},
 	}
@@ -212,15 +231,15 @@ func indexProperties(v VersionSpecificTemplates) Settings {
 }
 
 func indexPattern(v VersionSpecificTemplates, typ string) string {
-	return v.IndexPrefix + indexTypeDelimiter(v.Version) + typ + "-*"
+	return v.IndexPrefix + IndexTypeDelimiter(v.Version) + typ + "-*"
 }
 
-// indexTypeDelimiter returns a delimiter based on what's supported by the
+// IndexTypeDelimiter returns a delimiter based on what's supported by the
 // Elasticsearch version.
 // Starting in Elasticsearch 7.x, colons are no longer allowed in index names.
 // This logic will make sure the pattern in our index template doesn't use them
 // either. See: https://github.com/openzipkin/zipkin/issues/2219
-func indexTypeDelimiter(version float32) string {
+func IndexTypeDelimiter(version float64) string {
 	if version < 7.0 {
 		return ":"
 	}
@@ -245,7 +264,7 @@ type Template struct {
 
 // SetIndexName sets the name of the index to the correct property given the
 // provided ES version.
-func (t *Template) SetIndexName(version float32, name string) {
+func (t *Template) setIndexName(version float64, name string) {
 	if version < 6.0 {
 		t.Template = name
 	} else {
@@ -279,10 +298,10 @@ type Settings struct {
 
 // Index type
 type Index struct {
-	NumberOfShards      int   `json:"number_of_shards,omitempty"`
-	NumberOfReplicas    int   `json:"number_of_replicas,omitempty"`
-	RequestsCacheEnable bool  `json:"requests.cache.enable,omitempty"`
-	MapperDynamic       *bool `json:"mapper.dynamic,omitempty"`
+	NumberOfShards      string `json:"number_of_shards,omitempty"`
+	NumberOfReplicas    string `json:"number_of_replicas,omitempty"`
+	RequestsCacheEnable bool   `json:"requests.cache.enable,omitempty"`
+	MapperDynamic       *bool  `json:"mapper.dynamic,omitempty"`
 }
 
 // Analysis type
@@ -321,7 +340,7 @@ type MetaField struct {
 // AttachToTemplate attaches a Mappings object to an Index Template. Given the
 // version of ES it will either be a typed mapping (pre 7.0) or untyped one
 // (7.0+)
-func (m Mappings) AttachToTemplate(name string, version float32) interface{} {
+func (m Mappings) AttachToTemplate(name string, version float64) interface{} {
 	// ES 7.x defaults include_type_name to false https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_literal_include_type_name_literal_now_defaults_to_literal_false_literal
 	if version < 7.0 {
 		nm := make(map[string]Mappings)
