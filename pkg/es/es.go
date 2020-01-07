@@ -117,6 +117,25 @@ func (c Client) SetIndexTemplate(templateName string, tpl templater.Template) (s
 	return string(b), nil
 }
 
+// DeleteIndex removes indexes
+func (c Client) DeleteIndex(indexName string) (string, error) {
+	req, err := http.NewRequest("DELETE", c.host+"/"+indexName, nil)
+	if err != nil {
+		return "", err
+	}
+	res, err := c.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
+}
+
 // GetTemplates returns templates given provided template pattern.
 func (c Client) GetTemplates(tplPattern string) (map[string]templater.Template, error) {
 	res, err := c.client.Get(c.host + "/_template/" + tplPattern + "?local=false")

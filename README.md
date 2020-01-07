@@ -18,8 +18,10 @@ Usage of templater settings:
       --log-stacktrace-level string   The minimum logging level at which stack traces are captured, can be one of [debug, info, warn, error, none] (default "default:none")
       --log-target stringArray        The set of paths where to output the log. This can be any path as well as the special values stdout and stderr (default [stdout])
   -p, --prefix string                 index template name prefix (default "zipkin")
+      --purge-data                    purge existing Zipkin data (useful if incorrectly indexed)
   -r, --replicas int                  index replica count (default 1)
   -s, --shards int                    index shard count (default 5)
+
 ```
 
 Environment Variables:

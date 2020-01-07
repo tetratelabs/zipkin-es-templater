@@ -30,6 +30,7 @@ func main() {
 		host                 string
 		disableStrictTraceID bool
 		disableSearch        bool
+		purgeData            bool
 	}{
 		Config: t.DefaultConfig(),
 		host:   "http://localhost:9200",
@@ -83,6 +84,8 @@ func main() {
 			"disable search indexes (if not using Zipkin UI)")
 		fs.StringVarP(&settings.host, "host", "H", settings.host,
 			"Elasticsearch host URL")
+		fs.BoolVar(&settings.purgeData, "purge-data", false,
+			"purge exising Zipkin data (useful if incorrectly indexed)")
 
 		logOpts.AttachToFlagSet(fs)
 
@@ -154,4 +157,11 @@ func main() {
 		}
 	}
 
+	if settings.purgeData {
+		res, err := client.DeleteIndex(tplSvc.IndexPrefix() + "*")
+		if err != nil {
+			log.Errorf("unable to delete Zipkin data: %+v", err)
+		}
+		log.Infof("purge Zipkin data: %s", res)
+	}
 }
