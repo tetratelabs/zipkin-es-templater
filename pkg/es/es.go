@@ -32,9 +32,40 @@ type ClusterInfo struct {
 	Tagline string `json:"tagline"`
 }
 
-// GetClusterInfo returns an ES host's cluster info.
-func GetClusterInfo(client *http.Client, host string) (*ClusterInfo, error) {
-	res, err := client.Get(host)
+// Client holds an ES client for Zipkin specific ES management.
+type Client struct {
+	client  *http.Client
+	host    string
+	ci      ClusterInfo
+	version float64
+}
+
+// NewClient returns a new Zipkin specific ES management Client.
+func NewClient(client *http.Client, host string) (*Client, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	c := Client{
+		client: client,
+		host:   host,
+	}
+
+	ci, err := c.getClusterInfo()
+	if err != nil {
+		return nil, err
+	}
+	c.ci = *ci
+
+	if c.version, err = c.parseVersion(); err != nil {
+		return nil, err
+	}
+
+	return &c, nil
+}
+
+func (c *Client) getClusterInfo() (*ClusterInfo, error) {
+	res, err := c.client.Get(c.host)
 	if err != nil {
 		return nil, err
 	}
@@ -48,27 +79,31 @@ func GetClusterInfo(client *http.Client, host string) (*ClusterInfo, error) {
 	return &ci, nil
 }
 
-// ExtractVersion extracts major.minor as float from a ClusterInfo object.
-func ExtractVersion(ci *ClusterInfo) (float64, error) {
-	v := strings.Split(ci.Version.Number, ".")
+func (c Client) parseVersion() (float64, error) {
+	v := strings.Split(c.ci.Version.Number, ".")
 	if len(v) != 3 {
 		return 0.0, errors.New("invalid version number")
 	}
 	return strconv.ParseFloat(v[0]+"."+v[1], 64)
 }
 
+// Version returns the ES version of the registered ES host.
+func (c Client) Version() float64 {
+	return c.version
+}
+
 // SetIndexTemplate tries to insert provided template
-func SetIndexTemplate(client *http.Client, url string, tpl *templater.Template) (string, error) {
+func (c Client) SetIndexTemplate(templateName string, tpl templater.Template) (string, error) {
 	buf := new(bytes.Buffer)
 	if err := json.NewEncoder(buf).Encode(tpl); err != nil {
 		return "", err
 	}
-	req, err := http.NewRequest("PUT", url, buf)
+	req, err := http.NewRequest("PUT", c.host+"/_template/"+templateName, buf)
 	if err != nil {
 		return "", err
 	}
 	req.Header.Add("Content-Type", "application/json")
-	res, err := client.Do(req)
+	res, err := c.client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -80,4 +115,25 @@ func SetIndexTemplate(client *http.Client, url string, tpl *templater.Template) 
 	}
 
 	return string(b), nil
+}
+
+// GetTemplates returns templates given provided template pattern.
+func (c Client) GetTemplates(tplPattern string) (map[string]templater.Template, error) {
+	res, err := c.client.Get(c.host + "/_template/" + tplPattern + "?local=false")
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 && res.StatusCode != 404 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(string(b))
+	}
+	tpls := make(map[string]templater.Template)
+	if err = json.NewDecoder(res.Body).Decode(&tpls); err != nil {
+		return nil, err
+	}
+	return tpls, nil
 }

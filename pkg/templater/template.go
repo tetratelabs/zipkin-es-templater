@@ -19,14 +19,18 @@ import (
 	"strconv"
 )
 
+// IndexTemplateType for Zipkin indexes.
+type IndexTemplateType string
+
 // constants
 const (
 	// maximum character length constraint of most names, IP literals and IDs
 	shortStringLength = 256
-	AutoCompleteType  = "autocomplete"
-	SpanType          = "span"
-	DependencyType    = "dependency"
 	TemplateSuffix    = "_template"
+
+	AutoCompleteType IndexTemplateType = "autocomplete"
+	SpanType         IndexTemplateType = "span"
+	DependencyType   IndexTemplateType = "dependency"
 )
 
 var (
@@ -38,58 +42,86 @@ var (
 	keyWord = Field{Type: "keyword", Norms: &_false}
 )
 
-// VersionSpecificTemplates allows to construct ES version specific index
-// templates for Zipkin.
-type VersionSpecificTemplates struct {
+// Config holds the configuration data for a Service.
+type Config struct {
 	IndexPrefix   string
 	IndexReplicas int
 	IndexShards   int
 	SearchEnabled bool
 	StrictTraceID bool
-	Version       float64
 }
 
-// DefaultVersionSpecificTemplates holds default values.
-var DefaultVersionSpecificTemplates = VersionSpecificTemplates{
-	IndexPrefix:   "zipkin",
-	IndexReplicas: 1,
-	IndexShards:   5,
-	SearchEnabled: true,
-	StrictTraceID: true,
-	Version:       7.0,
+// DefaultConfig returns a Config object with default settings initialized.
+func DefaultConfig() Config {
+	return Config{
+		IndexPrefix:   "zipkin",
+		IndexReplicas: 1,
+		IndexShards:   5,
+		SearchEnabled: true,
+		StrictTraceID: true,
+	}
 }
 
-// HasSpanIndexTemplate returns if template map holds SpanIndexTemplate
-func HasSpanIndexTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
-	_, found := tpls[indexPattern(v, SpanType)+TemplateSuffix]
-	return found
+// Service allows to construct ES version specific index templates for Zipkin.
+type Service struct {
+	cfg                Config
+	version            float64
+	indexTypeDelimiter string
 }
 
-// HasDependencyTemplate returns if template map holds SpanIndexTemplate
-func HasDependencyTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
-	_, found := tpls[indexPattern(v, DependencyType)+TemplateSuffix]
-	return found
+// New returns a templating Service configured to the provided config values and
+// ES version.
+func New(config Config, version float64) (*Service, error) {
+	if version < 5.0 || version >= 8 {
+		return nil, fmt.Errorf(
+			"Elasticsearch versions 5-7.x are supported, was: %f", version)
+	}
+
+	s := Service{
+		cfg:                config,
+		version:            version,
+		indexTypeDelimiter: "-",
+	}
+
+	// IndexTypeDelimiter returns a delimiter based on what's supported by the
+	// Elasticsearch version.
+	// Starting in Elasticsearch 7.x, colons are no longer allowed in index
+	// names. This logic will make sure the pattern in our index template
+	// doesn't use them either.
+	// See: https://github.com/openzipkin/zipkin/issues/2219
+	if version < 7.0 {
+		s.indexTypeDelimiter = ":"
+	}
+
+	return &s, nil
 }
 
-// HasAutoCompleteTemplate returns if template map holds SpanIndexTemplate
-func HasAutoCompleteTemplate(v VersionSpecificTemplates, tpls map[string]Template) bool {
-	_, found := tpls[indexPattern(v, AutoCompleteType)+TemplateSuffix]
-	return found
+// TemplateByType returns a generated template for the provided type.
+func (s Service) TemplateByType(t IndexTemplateType) *Template {
+	var tpl Template
+	switch t {
+	case AutoCompleteType:
+		tpl = s.AutoCompleteTemplate()
+	case DependencyType:
+		tpl = s.DependencyTemplate()
+	case SpanType:
+		tpl = s.SpanIndexTemplate()
+	default:
+		return nil
+	}
+	return &tpl
 }
 
 // SpanIndexTemplate returns a span index template object that satisfies the
-// provided (version specific) settings.
-func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
-	if err := testSupportedVersion(v); err != nil {
-		return nil, err
-	}
-	t := Template{Settings: indexProperties(v)}
+// provided Zipkin and ES version specific settings.
+func (s Service) SpanIndexTemplate() Template {
+	t := Template{Settings: s.indexProperties()}
 
-	t.setIndexName(v.Version, indexPattern(v, SpanType))
+	t.setIndexName(s.version, s.indexPattern(SpanType))
 
 	traceIDMapping := keyWord
 
-	if !v.StrictTraceID {
+	if !s.cfg.StrictTraceID {
 		// Supporting mixed trace ID length is expensive due to needing a
 		// special analyzer and "fielddata" which consumes a lot of heap. Sites
 		// should only turn off strict trace ID when in a transition, and keep
@@ -118,7 +150,7 @@ func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
 	}
 	var m Mappings
 
-	if v.SearchEnabled {
+	if s.cfg.SearchEnabled {
 		m = Mappings{
 			Source: &MetaField{Excludes: []string{"_q"}},
 			DynamicTemplates: []DynamicTemplate{
@@ -162,43 +194,36 @@ func SpanIndexTemplate(v VersionSpecificTemplates) (*Template, error) {
 		}
 	}
 
-	t.Mappings = m.AttachToTemplate(SpanType, v.Version)
+	t.Mappings = m.AttachToTemplate(SpanType, s.version)
 
-	return &t, nil
+	return t
 }
 
 // DependencyTemplate returns a dependency template object that satisfies the
-// provided (version specific) settings.
-func DependencyTemplate(v VersionSpecificTemplates) (*Template, error) {
-	if err := testSupportedVersion(v); err != nil {
-		return nil, err
-	}
+// provided Zipkin and ES version specific settings.
+func (s Service) DependencyTemplate() Template {
 	t := Template{
-		Settings: indexProperties(v),
+		Settings: s.indexProperties(),
 	}
 
-	t.setIndexName(v.Version, indexPattern(v, DependencyType))
+	t.setIndexName(s.version, s.indexPattern(DependencyType))
 
 	m := Mappings{
 		Enabled: &_false,
 	}
-	t.Mappings = m.AttachToTemplate(DependencyType, v.Version)
+	t.Mappings = m.AttachToTemplate(DependencyType, s.version)
 
-	return &t, nil
+	return t
 }
 
 // AutoCompleteTemplate returns an autocomplete template object that satisfies
-// the provided (version specific) settings.
-func AutoCompleteTemplate(v VersionSpecificTemplates) (*Template, error) {
-	if err := testSupportedVersion(v); err != nil {
-		return nil, err
-	}
-
+// the provided Zipkin and ES version specific settings.
+func (s Service) AutoCompleteTemplate() Template {
 	t := Template{
-		Settings: indexProperties(v),
+		Settings: s.indexProperties(),
 	}
 
-	t.setIndexName(v.Version, indexPattern(v, AutoCompleteType))
+	t.setIndexName(s.version, s.indexPattern(AutoCompleteType))
 
 	m := Mappings{
 		Enabled: &_true,
@@ -207,51 +232,43 @@ func AutoCompleteTemplate(v VersionSpecificTemplates) (*Template, error) {
 			"tagValue": keyWord,
 		},
 	}
-	t.Mappings = m.AttachToTemplate(AutoCompleteType, v.Version)
+	t.Mappings = m.AttachToTemplate(AutoCompleteType, s.version)
 
-	return &t, nil
+	return t
 }
 
-func indexProperties(v VersionSpecificTemplates) Settings {
+func (s Service) indexProperties() Settings {
 	// 6.x _all disabled https://www.elastic.co/guide/en/elasticsearch/reference/6.7/breaking-changes-6.0.html#_the_literal__all_literal_meta_field_is_now_disabled_by_default
 	// 7.x _default disallowed https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_the_literal__default__literal_mapping_is_no_longer_allowed
-	s := Settings{
+	settings := Settings{
 		Index: Index{
-			NumberOfReplicas:    strconv.Itoa(v.IndexReplicas),
-			NumberOfShards:      strconv.Itoa(v.IndexShards),
+			NumberOfReplicas:    strconv.Itoa(s.cfg.IndexReplicas),
+			NumberOfShards:      strconv.Itoa(s.cfg.IndexShards),
 			RequestsCacheEnable: true,
 		},
 	}
-	if v.Version < 7.0 {
+	if s.version < 7.0 {
 		// there is no explicit documentation of index.mapper.dynamic being
 		// removed in v7, but it was.
-		s.Index.MapperDynamic = &_false
+		settings.Index.MapperDynamic = &_false
 	}
-	return s
+	return settings
 }
 
-func indexPattern(v VersionSpecificTemplates, typ string) string {
-	return v.IndexPrefix + IndexTypeDelimiter(v.Version) + typ + "-*"
+func (s Service) indexPattern(typ IndexTemplateType) string {
+	return s.cfg.IndexPrefix + s.indexTypeDelimiter + string(typ) + "-*"
 }
 
-// IndexTypeDelimiter returns a delimiter based on what's supported by the
-// Elasticsearch version.
-// Starting in Elasticsearch 7.x, colons are no longer allowed in index names.
-// This logic will make sure the pattern in our index template doesn't use them
-// either. See: https://github.com/openzipkin/zipkin/issues/2219
-func IndexTypeDelimiter(version float64) string {
-	if version < 7.0 {
-		return ":"
-	}
-	return "-"
+// IndexPrefix returns the index prefix with the ES version specific index type
+// delimiter.
+func (s Service) IndexPrefix() string {
+	return s.cfg.IndexPrefix + s.indexTypeDelimiter
 }
 
-func testSupportedVersion(v VersionSpecificTemplates) error {
-	if v.Version < 5.0 || v.Version >= 8 {
-		return fmt.Errorf(
-			"Elasticsearch versions 5-7.x are supported, was: %f", v.Version)
-	}
-	return nil
+// IndexTemplateKey returns the fully named key for indexTypeName
+func (s Service) IndexTemplateKey(indexTypeName IndexTemplateType) string {
+	return s.cfg.IndexPrefix + s.indexTypeDelimiter + string(indexTypeName) +
+		TemplateSuffix
 }
 
 // Template type
@@ -340,11 +357,11 @@ type MetaField struct {
 // AttachToTemplate attaches a Mappings object to an Index Template. Given the
 // version of ES it will either be a typed mapping (pre 7.0) or untyped one
 // (7.0+)
-func (m Mappings) AttachToTemplate(name string, version float64) interface{} {
+func (m Mappings) AttachToTemplate(name IndexTemplateType, version float64) interface{} {
 	// ES 7.x defaults include_type_name to false https://www.elastic.co/guide/en/elasticsearch/reference/current/breaking-changes-7.0.html#_literal_include_type_name_literal_now_defaults_to_literal_false_literal
 	if version < 7.0 {
 		nm := make(map[string]Mappings)
-		nm[name] = m
+		nm[string(name)] = m
 		return nm
 	}
 	return m

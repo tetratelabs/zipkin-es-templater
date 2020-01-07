@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,18 +26,13 @@ var (
 func main() {
 	// init our defaults
 	var settings = struct {
-		t.VersionSpecificTemplates
+		t.Config
 		host                 string
 		disableStrictTraceID bool
 		disableSearch        bool
-		waitForActiveShards  int
 	}{
-		VersionSpecificTemplates: t.VersionSpecificTemplates{
-			IndexPrefix:   "zipkin",
-			IndexReplicas: 1,
-			IndexShards:   5,
-		},
-		host: "http://localhost:9200",
+		Config: t.DefaultConfig(),
+		host:   "http://localhost:9200",
 	}
 	// os env override
 	{
@@ -112,117 +105,53 @@ func main() {
 		os.Exit(1)
 	}
 
-	//	create our http client
-	client := &http.Client{}
-
+	// create ES client
 	log.Debugf("trying to connect to host: %s", settings.host)
-
-	ci, err := es.GetClusterInfo(client, settings.host)
+	client, err := es.NewClient(&http.Client{}, settings.host)
 	if err != nil {
-		fmt.Printf("unable to retrieve cluster info: %+v\n", err)
+		fmt.Printf("unable to create ES client: %+v\n", err)
 		os.Exit(1)
 	}
+	log.Infof("connected to Elasticsearch version: %g", client.Version())
 
-	settings.Version, err = es.ExtractVersion(ci)
+	// create Template Service
+	tplSvc, err := t.New(settings.Config, client.Version())
 	if err != nil {
-		log.Errorf("unable to retrieve ES version: %+v", err)
+		log.Errorf("%+v", err)
 		os.Exit(1)
 	}
 
-	log.Infof("connected to Elasticsearch version: %g", settings.Version)
-
-	res, err := http.Get(settings.host + templatePath + settings.IndexPrefix +
-		t.IndexTypeDelimiter(settings.Version) + "*?local=false")
+	// retrieve all Zipkin index templates
+	tpls, err := client.GetTemplates(tplSvc.IndexPrefix() + "*")
 	if err != nil {
-		log.Errorf("unable to check templates: %+v", err)
-		os.Exit(1)
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 && res.StatusCode != 404 {
-		b, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Errorf("unable to check templates: %+v", err)
-			os.Exit(1)
-		}
-		log.Errorf("unable to check templates: %s", string(b))
-		os.Exit(1)
-	}
-	tpls := make(map[string]t.Template)
-	if err = json.NewDecoder(res.Body).Decode(&tpls); err != nil {
-		log.Errorf("unable to deserialize template check: %+v", err)
+		log.Errorf("unable to get templates: %+v", err)
 		os.Exit(1)
 	}
 
-	// check for SpanIndexTemplate
-	key := settings.IndexPrefix + t.IndexTypeDelimiter(settings.Version) +
-		t.SpanType + t.TemplateSuffix
-	if _, found := tpls[key]; !found {
-		log.Infof("spanIndex %q template missing", key)
-		tpl, err := t.SpanIndexTemplate(settings.VersionSpecificTemplates)
-		if err != nil {
-			log.Errorf("unable to generate spanIndexTemplate: %+v", err)
-			os.Exit(1)
-		}
+	// check for the Zipkin IndexTemplates and insert if not found
+	for _, templateType := range []t.IndexTemplateType{
+		t.AutoCompleteType, t.SpanType, t.DependencyType,
+	} {
+		key := tplSvc.IndexTemplateKey(templateType)
+		if _, found := tpls[key]; !found {
+			log.Infof("%s template %q missing", templateType, key)
 
-		res, err := es.SetIndexTemplate(
-			client, settings.host+"/_template/"+settings.IndexPrefix+"-"+
-				t.SpanType+"_template", tpl,
-		)
-		if err != nil {
-			log.Errorf("unable to create spanIndexTemplate: %+v", err)
-			os.Exit(1)
-		}
-		log.Infof("spanIndex: %s", res)
-	} else {
-		log.Debugf("spanIndex template found")
-	}
+			tpl := tplSvc.TemplateByType(templateType)
+			if tpl == nil {
+				log.Warnf("%s template not supported", templateType)
+				continue
+			}
 
-	// check for AutoCompleteTemplate
-	key = settings.IndexPrefix + t.IndexTypeDelimiter(settings.Version) +
-		t.AutoCompleteType + t.TemplateSuffix
-	if _, found := tpls[key]; !found {
-		log.Infof("autoComplete %q template missing", key)
-		tpl, err := t.AutoCompleteTemplate(settings.VersionSpecificTemplates)
-		if err != nil {
-			log.Errorf("unable to generate autoCompleteTemplate: %+v", err)
-			os.Exit(1)
-		}
+			res, err := client.SetIndexTemplate(key, *tpl)
+			if err != nil {
+				log.Errorf("unable to create %s template: %+v", templateType, err)
+				os.Exit(1)
+			}
 
-		res, err := es.SetIndexTemplate(
-			client, settings.host+"/_template/"+settings.IndexPrefix+"-"+
-				t.AutoCompleteType+"_template", tpl,
-		)
-		if err != nil {
-			log.Errorf("unable to create autoCompleteTemplate: %+v", err)
-			os.Exit(1)
+			log.Infof("%s template update: %s", templateType, res)
+		} else {
+			log.Debugf("%s template found", templateType)
 		}
-		log.Infof("autoComplete: %s", res)
-	} else {
-		log.Debugf("autoComplete template found")
-	}
-
-	// check for DependencyTemplate
-	key = settings.IndexPrefix + t.IndexTypeDelimiter(settings.Version) +
-		t.DependencyType + t.TemplateSuffix
-	if _, found := tpls[key]; !found {
-		log.Infof("dependency %q template missing", key)
-		tpl, err := t.DependencyTemplate(settings.VersionSpecificTemplates)
-		if err != nil {
-			log.Errorf("unable to generate dependencyTemplate: %+v", err)
-			os.Exit(1)
-		}
-
-		res, err := es.SetIndexTemplate(
-			client, settings.host+"/_template/"+settings.IndexPrefix+"-"+
-				t.DependencyType+"_template", tpl,
-		)
-		if err != nil {
-			log.Errorf("unable to create dependencyTemplate: %+v", err)
-			os.Exit(1)
-		}
-		log.Infof("dependencyTemplate: %s", res)
-	} else {
-		log.Debugf("dependency template found")
 	}
 
 }
