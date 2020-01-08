@@ -1,0 +1,37 @@
+version: 2.0
+
+jobs:
+  build:
+    docker:
+      - image: circleci/golang:1.13.5
+    environment:
+      GOGC: "20"
+      GOMAXPROCS: "2"
+      GOOS: linux
+      GOARCH: amd64
+    steps:
+      - checkout
+      - run: make
+      # TODO(dio): Add test.
+  release:
+    docker:
+      - image: circleci/golang:1.13.5
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+      - run: curl -sL https://git.io/goreleaser | bash
+
+workflows:
+  version: 2
+  all:
+    jobs:
+      - build
+  release:
+    jobs:
+      - release:
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /v[0-9]+(\.[0-9]+)*(-.*)*/
