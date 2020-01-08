@@ -1,1 +1,2 @@
-build
+ensure_templates
+dist
