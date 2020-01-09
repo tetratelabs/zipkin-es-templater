@@ -34,21 +34,28 @@ type ClusterInfo struct {
 
 // Client holds an ES client for Zipkin specific ES management.
 type Client struct {
-	client  *http.Client
-	host    string
-	ci      ClusterInfo
-	version float64
+	client    *http.Client
+	host      string
+	basicAuth func(req *http.Request)
+	ci        ClusterInfo
+	version   float64
 }
 
 // NewClient returns a new Zipkin specific ES management Client.
-func NewClient(client *http.Client, host string) (*Client, error) {
+func NewClient(client *http.Client, host, user, pass string) (*Client, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 
 	c := Client{
-		client: client,
-		host:   host,
+		client:    client,
+		host:      host,
+		basicAuth: func(_ *http.Request) {},
+	}
+	if user != "" || pass != "" {
+		c.basicAuth = func(req *http.Request) {
+			req.SetBasicAuth(user, pass)
+		}
 	}
 
 	ci, err := c.getClusterInfo()
@@ -65,12 +72,23 @@ func NewClient(client *http.Client, host string) (*Client, error) {
 }
 
 func (c *Client) getClusterInfo() (*ClusterInfo, error) {
-	res, err := c.client.Get(c.host)
+	req, err := http.NewRequest("GET", c.host, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.basicAuth(req)
+	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer res.Body.Close()
-
+	if res.StatusCode != 200 {
+		b, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, err
+		}
+		return nil, errors.New(string(b))
+	}
 	var ci ClusterInfo
 	if err = json.NewDecoder(res.Body).Decode(&ci); err != nil {
 		return nil, err
@@ -102,6 +120,7 @@ func (c Client) SetIndexTemplate(templateName string, tpl templater.Template) (s
 	if err != nil {
 		return "", err
 	}
+	c.basicAuth(req)
 	req.Header.Add("Content-Type", "application/json")
 	res, err := c.client.Do(req)
 	if err != nil {
@@ -123,6 +142,7 @@ func (c Client) DeleteIndex(indexName string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	c.basicAuth(req)
 	res, err := c.client.Do(req)
 	if err != nil {
 		return "", err
@@ -138,7 +158,12 @@ func (c Client) DeleteIndex(indexName string) (string, error) {
 
 // GetTemplates returns templates given provided template pattern.
 func (c Client) GetTemplates(tplPattern string) (map[string]templater.Template, error) {
-	res, err := c.client.Get(c.host + "/_template/" + tplPattern + "?local=false")
+	req, err := http.NewRequest("GET", c.host+"/_template/"+tplPattern+"?local=false", nil)
+	if err != nil {
+		return nil, err
+	}
+	c.basicAuth(req)
+	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, err
 	}

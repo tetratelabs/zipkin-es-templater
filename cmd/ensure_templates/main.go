@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,12 +32,18 @@ func main() {
 	var settings = struct {
 		t.Config
 		host                 string
+		caBundle             string
+		user                 string
+		pass                 string
 		disableStrictTraceID bool
 		disableSearch        bool
 		purgeData            bool
 	}{
-		Config: t.DefaultConfig(),
-		host:   "http://localhost:9200",
+		Config:   t.DefaultConfig(),
+		host:     "http://localhost:9200",
+		caBundle: "",
+		user:     "",
+		pass:     "",
 	}
 	// os env override
 	{
@@ -65,10 +75,14 @@ func main() {
 				settings.disableStrictTraceID = true
 			}
 		}
+		settings.caBundle, _ = os.LookupEnv("CA_BUNDLE")
+		settings.user, _ = os.LookupEnv("ES_USERNAME")
+		settings.pass, _ = os.LookupEnv("ES_PASSWORD")
 	}
 
 	// flag handling
 	{
+		var user, pass string
 		fs := pflag.NewFlagSet("templater settings", pflag.ContinueOnError)
 		fs.StringVarP(&settings.IndexPrefix, "prefix", "p",
 			settings.IndexPrefix, "index template name prefix")
@@ -86,6 +100,9 @@ func main() {
 			"Elasticsearch host URL")
 		fs.BoolVar(&settings.purgeData, "purge-data", false,
 			"purge exising Zipkin data (useful if incorrectly indexed)")
+		fs.StringVar(&settings.caBundle, "ca-bundle", settings.caBundle, "ca-bundle for self signed https")
+		fs.StringVar(&user, "es-username", "", "basic auth username")
+		fs.StringVar(&pass, "es-password", "", "basic auth password")
 
 		logOpts.AttachToFlagSet(fs)
 
@@ -100,6 +117,12 @@ func main() {
 
 		settings.StrictTraceID = !settings.disableStrictTraceID
 		settings.SearchEnabled = !settings.disableSearch
+		if user != "" {
+			settings.user = user
+		}
+		if pass != "" {
+			settings.pass = pass
+		}
 	}
 
 	// initialize the logging subsystem
@@ -110,9 +133,33 @@ func main() {
 
 	// create ES client
 	log.Debugf("trying to connect to host: %s", settings.host)
-	client, err := es.NewClient(&http.Client{}, settings.host)
+	url, err := url.Parse(settings.host)
 	if err != nil {
-		fmt.Printf("unable to create ES client: %+v\n", err)
+		log.Errorf("invalid ES host provided %q: %+v", settings.host, err)
+		os.Exit(1)
+	}
+	httpClient := &http.Client{}
+	if url.Scheme == "https" && settings.caBundle != "" {
+		b, err := ioutil.ReadFile(settings.caBundle)
+		if err != nil {
+			log.Errorf("unable to load ca-bundle: %+v", err)
+			os.Exit(1)
+		}
+		pool := x509.NewCertPool()
+		if ok := pool.AppendCertsFromPEM(b); !ok {
+			log.Errorf("not a valid ca-bundle")
+			os.Exit(1)
+		}
+		httpClient.Transport = &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: pool,
+			},
+		}
+	}
+	client, err := es.NewClient(httpClient, settings.host, settings.user,
+		settings.pass)
+	if err != nil {
+		log.Errorf("unable to create ES client: %+v\n", err)
 		os.Exit(1)
 	}
 	log.Infof("connected to Elasticsearch version: %g", client.Version())
