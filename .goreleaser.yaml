@@ -34,7 +34,7 @@ changelog:
     - goreleaser
 dockers:
 - image_templates:
-  - tetrate/ensure_templates:{{ .Version }}
+  - tetrate/zipkin_ensure_es_templates:{{ .Version }}
   dockerfile: Dockerfile
   binaries:
   - ensure_templates
