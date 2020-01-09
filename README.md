@@ -31,7 +31,7 @@ INDEX_PREFIX=zipkin \
     INDEX_REPLICAS=1 \
     INDEX_SHARDS=5 \
     ES_HOST="https://localhost:9200" \
-    DISABLE_STRICT_TRACEID 0 \
+    DISABLE_STRICT_TRACEID=0 \
     DISABLE_SEARCH=0 \
     ./zipkin-es-templater
 ```
