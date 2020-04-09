@@ -5,8 +5,11 @@ Command line arguments:
 ```bash
 
 Usage of templater settings:
+      --ca-bundle string              ca-bundle for self signed https
       --disable-search                disable search indexes (if not using Zipkin UI)
       --disable-strict-traceId        disable strict traceID (when migrating between 64-128bit)
+      --es-password string            basic auth password
+      --es-username string            basic auth username
   -H, --host string                   Elasticsearch host URL (default "http://localhost:9200")
       --log-as-json                   Whether to format output as JSON or in plain console-friendly format
       --log-caller string             Comma-separated list of scopes for which to include called information, scopes can be any of [default]
