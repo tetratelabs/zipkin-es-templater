@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/pflag"
 	l "github.com/tetratelabs/log"
 
+	"github.com/tetratelabs/zipkin-es-templater/pkg/credentials"
 	"github.com/tetratelabs/zipkin-es-templater/pkg/es"
 	t "github.com/tetratelabs/zipkin-es-templater/pkg/templater"
 )
@@ -35,6 +36,7 @@ func main() {
 		caBundle             string
 		user                 string
 		pass                 string
+		credFile             string
 		disableStrictTraceID bool
 		disableSearch        bool
 		purgeData            bool
@@ -78,12 +80,19 @@ func main() {
 		settings.caBundle, _ = os.LookupEnv("CA_BUNDLE")
 		settings.user, _ = os.LookupEnv("ES_USERNAME")
 		settings.pass, _ = os.LookupEnv("ES_PASSWORD")
+		settings.credFile, _ = os.LookupEnv("DB_CREDENTIALS_FILE")
 	}
 
 	// flag handling
 	{
-		var user, pass string
+		var (
+			err  error
+			user string
+			pass string
+		)
+
 		fs := pflag.NewFlagSet("templater settings", pflag.ContinueOnError)
+		fs.SortFlags = false
 		fs.StringVarP(&settings.IndexPrefix, "prefix", "p",
 			settings.IndexPrefix, "index template name prefix")
 		fs.IntVarP(&settings.IndexReplicas, "replicas", "r",
@@ -101,13 +110,14 @@ func main() {
 		fs.BoolVar(&settings.purgeData, "purge-data", false,
 			"purge exising Zipkin data (useful if incorrectly indexed)")
 		fs.StringVar(&settings.caBundle, "ca-bundle", settings.caBundle, "ca-bundle for self signed https")
-		fs.StringVar(&user, "es-username", "", "basic auth username")
-		fs.StringVar(&pass, "es-password", "", "basic auth password")
+		fs.StringVar(&user, "es-username", "", "basic auth username (or template if using credentials file)")
+		fs.StringVar(&pass, "es-password", "", "basic auth password (or template if using credentials file")
+		fs.StringVar(&settings.credFile, "es-credentials-file", settings.credFile, "supply a credentials file")
 
 		logOpts.AttachToFlagSet(fs)
 
 		// parse FlagSet and exit on error
-		if err := fs.Parse(os.Args[1:]); err != nil {
+		if err = fs.Parse(os.Args[1:]); err != nil {
 			if err == pflag.ErrHelp {
 				os.Exit(0)
 			}
@@ -122,6 +132,14 @@ func main() {
 		}
 		if pass != "" {
 			settings.pass = pass
+		}
+
+		if settings.credFile != "" {
+			settings.user, settings.pass, err = credentials.ReadFile(settings.credFile, settings.user, settings.pass)
+			if err != nil {
+				fmt.Printf("unable to retrieve credentials: %+v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 
