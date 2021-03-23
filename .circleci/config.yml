@@ -4,7 +4,7 @@ jobs:
   build:
     resource_class: small
     docker:
-      - image: circleci/golang:1.13.5
+      - image: circleci/golang:1.16.2
       - image: tetrate/elasticsearch:6.4.3
     environment:
       GOGC: "20"
@@ -18,7 +18,7 @@ jobs:
       - run: ./ci/test
   release:
     docker:
-      - image: circleci/golang:1.13.5
+      - image: circleci/golang:1.16.2
     steps:
       - checkout
       - setup_remote_docker
