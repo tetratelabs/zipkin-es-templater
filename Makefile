@@ -6,8 +6,8 @@ PLATFORMS := linux/amd64,linux/arm64
 OCI_SOURCE=tetratelabs/zipkin-es-templater
 OCI_REVISION=$$(git rev-parse HEAD | cut -c 1-10)
 
-build: deps
-	CGO_ENABLED=0 go build -o build/ensure_templates ./cmd/ensure_templates/main.go
+ensure_templates: deps
+	CGO_ENABLED=0 go build -o ensure_templates ./cmd/ensure_templates/main.go
 
 deps:
 	go mod download
@@ -25,7 +25,7 @@ docker:
 	--build-arg OCI_REVISION=$(OCI_REVISION) \
 	-t $(HUB)/$(NAME):$(TAG) .
 
-push: build
+push:
 	docker buildx create --use --driver docker-container --name $(NAME) > /dev/null 2>&1 || true
 	docker buildx build \
 		--push --no-cache \
