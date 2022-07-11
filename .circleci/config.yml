@@ -9,11 +9,9 @@ jobs:
     environment:
       GOGC: "20"
       GOMAXPROCS: "2"
-      GOOS: linux
-      GOARCH: amd64
     steps:
       - checkout
-      - run: make
+      - run: make push
       - run: ./ci/wait
       - run: ./ci/test
   release:
