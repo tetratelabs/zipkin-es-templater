@@ -20,17 +20,16 @@ clean:
 
 docker:
 	docker build \
-	--no-cache \
 	--build-arg OCI_SOURCE=$(OCI_SOURCE) \
 	--build-arg OCI_REVISION=$(OCI_REVISION) \
 	-t $(HUB)/$(NAME):$(TAG) .
 
 push:
-	docker buildx create --use --driver docker-container --name $(NAME) > /dev/null 2>&1 || true
+	docker buildx create --use --name $(NAME) --driver docker-container
 	docker buildx build \
-		--push --no-cache \
+		--push \
 		--build-arg OCI_SOURCE=$(OCI_SOURCE) \
 		--build-arg OCI_REVISION=$(OCI_REVISION) \
 		--platform $(PLATFORMS) \
 		-t $(HUB)/$(NAME):$(TAG) .
-	docker buildx rm $(NAME) || true
+	docker buildx rm $(NAME)

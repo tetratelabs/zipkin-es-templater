@@ -8,7 +8,7 @@ RUN CGO_ENABLED=0 \
     ./cmd/ensure_templates/main.go
 
 
-FROM gcr.io/tetratelabs/tetrate-base:v0.6
+FROM gcr.io/tetratelabs/tetrate-base:v0.4
 COPY --from=builder go/src/github.com/tetratelabs/zipkin-es-templater/build/ensure_templates /
 ARG OCI_SOURCE
 ARG OCI_REVISION
