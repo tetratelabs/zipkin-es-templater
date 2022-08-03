@@ -9,21 +9,26 @@ jobs:
     environment:
       GOGC: "20"
       GOMAXPROCS: "2"
-      GOOS: linux
-      GOARCH: amd64
     steps:
       - checkout
       - run: make
       - run: ./ci/wait
       - run: ./ci/test
   release:
+    environment:
+      DOCKER_BUILDKIT: 1
+      PLATFORMS: linux/amd64,linux/arm64
     docker:
       - image: circleci/golang:1.16.2
     steps:
       - checkout
-      - setup_remote_docker
+      - setup_remote_docker:
+          version: 20.10.11
+      - install-docker-buildx
+      - run: apt install -y make
       - run: echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
       - run: curl -sL https://git.io/goreleaser | bash
+      - run: make push
 
 workflows:
   version: 2
@@ -38,3 +43,20 @@ workflows:
               ignore: /.*/
             tags:
               only: /v[0-9]+(\.[0-9]+)*(-.*)*/
+
+commands:
+  install-docker-buildx:
+    description: Install Docker Buildx
+    steps:
+      - run:
+          name: Install Docker Buildx
+          command: |
+            docker version
+            BUILDX_BINARY_URL="https://github.com/docker/buildx/releases/download/v0.4.2/buildx-v0.4.2.linux-amd64"
+            curl --output docker-buildx --silent --show-error --location --fail --retry 3 "$BUILDX_BINARY_URL"
+            mkdir -p ~/.docker/cli-plugins
+            mv docker-buildx ~/.docker/cli-plugins/
+            chmod a+x ~/.docker/cli-plugins/docker-buildx
+            docker buildx install
+            docker buildx version
+            docker run --rm --privileged tonistiigi/binfmt --install "${PLATFORMS}"
