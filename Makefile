@@ -1,7 +1,7 @@
 HUB ?= docker.io/tetrate
 NAME := zipkin_ensure_es_templates
 TAG := 0.1.2
-PLATFORMS := linux/amd64,linux/arm64
+PLATFORMS ?= linux/amd64,linux/arm64
 
 OCI_SOURCE=tetratelabs/zipkin-es-templater
 OCI_REVISION=$$(git rev-parse HEAD | cut -c 1-10)
