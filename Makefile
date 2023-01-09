@@ -26,8 +26,6 @@ platforms := linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 # currently we do
 archives  := $(platforms:%=dist/$(NAME)_$(VERSION)_%.tar.gz)
 checksums := dist/$(NAME)_$(VERSION)_checksums.txt
 
-export PATH := $(go_tools_dir):$(PATH)
-
 build: $(current_binary) ## Build the current binary
 
 test: ## Run unit tests
