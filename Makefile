@@ -1,5 +1,8 @@
 NAME := ensure_templates
 
+# The container image name.
+IMAGE_NAME := zipkin_ensure_es_templates
+
 # Current version.
 VERSION ?= dev
 
@@ -30,7 +33,7 @@ build: $(current_binary) ## Build the current binary
 dist: $(archives) $(checksums) ## Generate release assets
 
 images: ## Build and push images
-	$(call ko-build,$(REGISTRY)/$(NAME))
+	$(call ko-build,$(REGISTRY)/$(IMAGE_NAME))
 
 # Currently, we only do sanity check. This requires a running elasticseach service on port 9200 with disabled security.
 sanity: $(current_binary) ## Run sanity check
