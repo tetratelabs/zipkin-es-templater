@@ -9,36 +9,19 @@ REGISTRY ?= docker.io/tetrate
 # Supported container platforms
 PLATFORMS ?= linux/amd64 linux/arm64
 
-# Required tools.
-ko@v := github.com/google/ko@v0.12.0
-
-# Root dir returns absolute path of current directory.
-root_dir := $(shell git rev-parse --show-toplevel)
-
-# Local cache directory.
-CACHE_DIR ?= $(root_dir)/.cache
-
-# Currently we resolve it using which. But more sophisticated approach is to use infer GOROOT.
-go     := $(shell which go)
+go     := $(shell which go) # Currently we resolve go using which. A more sophisticated approach is to use infer GOROOT.
 goarch := $(shell $(go) env GOARCH)
 goexe  := $(shell $(go) env GOEXE)
 goos   := $(shell $(go) env GOOS)
-
-# Go tools directory holds the binaries of Go-based tools.
-go_tools_dir := $(CACHE_DIR)/tools/go
-
-# Path to ko binary.
-ko := $(go_tools_dir)/ko
+ko     := $(go) run github.com/google/ko@v0.12.0
 
 current_binary_path := build/$(NAME)_$(goos)_$(goarch)
 current_binary      := $(current_binary_path)/$(NAME)$(goexe)
 main_go_sources     := cmd/$(NAME)/main.go
 
-# Currently we don't support Windows.
-binary_platforms := linux_amd64 linux_arm64 darwin_amd64 darwin_arm64
-
-archives := $(binary_platforms:%=dist/$(NAME)_$(VERSION)_%.tar.gz)
-checksums := dist/$(NAME)_$(VERSION)_checksums.txt
+binary_platforms := linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 # currently we don't support Windows.
+archives         := $(binary_platforms:%=dist/$(NAME)_$(VERSION)_%.tar.gz)
+checksums        := dist/$(NAME)_$(VERSION)_checksums.txt
 
 export PATH := $(go_tools_dir):$(PATH)
 
@@ -46,7 +29,7 @@ build: $(current_binary) ## Build the current binary
 
 dist: $(archives) $(checksums) ## Generate release assets
 
-images: $(ko) ## Build and push images
+images: ## Build and push images
 	$(call ko-build,$(REGISTRY)/$(NAME))
 
 # Currently, we only do sanity check. This requires a running elasticseach service on port 9200 with disabled security.
@@ -67,10 +50,6 @@ dist/$(NAME)_$(VERSION)_%.tar.gz: build/$(NAME)_%/$(NAME)
 sha256sum := $(if $(findstring darwin,$(goos)),shasum -a 256,sha256sum)
 $(checksums): $(archives)
 	@$(sha256sum) $^ > $@
-
-# Catch all rules for Go-based tools.
-$(go_tools_dir)/%:
-	@GOBIN=$(go_tools_dir) go install $($(notdir $@)@v)
 
 go_link = -X main.version=$(VERSION)
 go-arch = $(if $(findstring amd64,$1),amd64,arm64)
