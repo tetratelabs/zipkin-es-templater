@@ -36,6 +36,6 @@ dockers:
 - image_templates:
   - tetrate/zipkin_ensure_es_templates:{{ .Version }}
   dockerfile: Dockerfile
-  binaries:
+  ids:
   - ensure_templates
 # TODO(dio): brews
