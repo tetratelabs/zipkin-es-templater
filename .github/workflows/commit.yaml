@@ -32,9 +32,13 @@ jobs:
           go-version: '1.19.x'
           cache: true
 
+      - name: Run unit tests
+        run: make test
+
       - name: Build current binary
         run: make build
 
+      # This is required to boot Elasticsearch. Reference: https://github.com/elastic/elastic-github-actions/tree/master/elasticsearch#usage.
       - name: Configure sysctl limits
         run: |
           sudo swapoff -a
@@ -46,7 +50,7 @@ jobs:
         uses: elastic/elastic-github-actions/elasticsearch@master
         with:
           stack-version: 6.4.3
-          security-enabled: false
+          security-enabled: false # disable security. https://github.com/elastic/elastic-github-actions/tree/master/elasticsearch#disable-security.
 
       - name: Sanity check
         run: make sanity

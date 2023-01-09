@@ -30,6 +30,9 @@ export PATH := $(go_tools_dir):$(PATH)
 
 build: $(current_binary) ## Build the current binary
 
+test: ## Run unit tests
+	@$(go) test ./...
+
 dist: $(archives) $(checksums) ## Generate release assets
 
 images: ## Build and push images
