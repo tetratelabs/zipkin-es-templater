@@ -1,10 +1,10 @@
-version: 2.0
+version: 2.1
 
 jobs:
   build:
     resource_class: small
     docker:
-      - image: circleci/golang:1.16.2
+      - image: cimg/go:1.19.4
       - image: tetrate/elasticsearch:6.4.3
     environment:
       GOGC: "20"
@@ -19,7 +19,7 @@ jobs:
       DOCKER_BUILDKIT: 1
       PLATFORMS: linux/amd64,linux/arm64
     docker:
-      - image: circleci/golang:1.16.2
+      - image: cimg/go:1.19.4
     steps:
       - checkout
       - setup_remote_docker:
