@@ -22,9 +22,9 @@ current_binary_path := build/$(NAME)_$(goos)_$(goarch)
 current_binary      := $(current_binary_path)/$(NAME)$(goexe)
 main_go_sources     := cmd/$(NAME)/main.go
 
-binary_platforms := linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 # currently we don't support Windows.
-archives         := $(binary_platforms:%=dist/$(NAME)_$(VERSION)_%.tar.gz)
-checksums        := dist/$(NAME)_$(VERSION)_checksums.txt
+platforms := linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 # currently we don't support Windows.
+archives  := $(platforms:%=dist/$(NAME)_$(VERSION)_%.tar.gz)
+checksums := dist/$(NAME)_$(VERSION)_checksums.txt
 
 export PATH := $(go_tools_dir):$(PATH)
 
