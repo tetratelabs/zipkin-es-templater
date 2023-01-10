@@ -1,0 +1,14 @@
+defaultBaseImage: docker.io/tetrate/tetrate-base:v0.5
+
+builds:
+  - id: ensure_templates
+    main: cmd/ensure_templates
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -tags
+      - netgo
+    ldflags:
+      - -s
+      - -w
+      - -extldflags "-static"

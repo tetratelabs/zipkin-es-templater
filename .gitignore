@@ -1,3 +1,6 @@
 ensure_templates
 dist
 .idea
+
+build
+.cache
