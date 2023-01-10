@@ -50,5 +50,5 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and push images
-        run: make images
+      - name: Build and push image
+        run: make image

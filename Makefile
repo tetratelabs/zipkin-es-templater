@@ -33,7 +33,7 @@ test: ## Run unit tests
 
 dist: $(archives) $(checksums) ## Generate release assets
 
-images: ## Build and push images
+image: ## Build and push image
 	$(call ko-build,$(REGISTRY)/$(IMAGE_NAME))
 
 # Currently, we only do sanity check. This requires a running elasticseach service on port 9200 with disabled security.
